@@ -72,7 +72,7 @@ describe("zip", () => {
         // Due to how ZIP files don't save dedicated entries for folders unless it's an empty folder, we cannot check
         // "name with space2" or "new subfolder2" for their mode/mtime, because those simply don't exist for them in the ZIP.
         const statFolderWithSpace = fs.statSync(path.join(unzipTarget, "name with space2/empty folder"));
-        expect(statFolderWithSpace.mode & 0o777).toBe(0o750);
+        expect(statFolderWithSpace.mode & 0o777).toBe(0o755); // folders should always be 0o755 / not have mode overrides applied
         expect(statFolderWithSpace.mtime.getTime()).toBe(dateDefault.getTime()); // should use default from Zip constructor
     
         const statFolderFile1 = fs.statSync(path.join(unzipTarget, "new subfolder2/test text.txt"));

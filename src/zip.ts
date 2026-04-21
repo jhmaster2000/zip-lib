@@ -89,8 +89,11 @@ export class Zip extends Cancelable {
      * @param folder
      * @param metadataPath Typically, `metadataPath` would be calculated as `path.relative(root, realPath)`.
      * A valid metadataPath must not start with "/" or /[A-Za-z]:\//, and must not contain "..".
-     * @param options Options specific to this folder, will take priority over any default options set in the `Zip` constructor.
-     * All files within the folder will inherit the same options, to set per-file options, use `addFile`.
+     * @param options Options for all files within this folder and its subfolders (recursively),
+     * will take priority over any default options set in the `Zip` constructor. To set per-file options, use `addFile`.
+     * 
+     * Note that the folder itself is not affected by these options, given the ZIP format does not typically store explicit entries
+     * for folders, as such it does not store most of the fields these options control such as `mtime` and `mode` (for folders).
      */
     public addFolder(folder: string, metadataPath?: string, options?: Partial<yazl.DirectoryOptions>): void {
         this.zipFolders.push({
@@ -320,9 +323,9 @@ export class Zip extends Cancelable {
             if (entry.type === "dir") {
                 zip.addEmptyDirectory(file.metadataPath, {
                     mtime: entry.mtime,
-                    mode: entry.mode,
                     ...this.getYazlOptions(),
                     ...file.options,
+                    mode: 0o755,
                 });
             } else {
                 await this.addFileStream(zip, entry, file, token);
@@ -365,11 +368,16 @@ export class Zip extends Cancelable {
 
     private async addSymlink(zip: yazl.ZipFile, file: exfs.FileEntry, zipEntry: ZipFileEntry): Promise<void> {
         const linkTarget = await fs.readlink(file.path);
+        const stat = await fs.stat(file.path).catch(() => null /* broken symlink */);
         zip.addBuffer(Buffer.from(linkTarget), zipEntry.metadataPath, {
             mtime: file.mtime,
             mode: file.mode,
             ...this.getYazlOptions(),
             ...zipEntry.options,
+            // mode is a 16-bit field, so 0o177777 is the full mask
+            // clear the lower 3 fields to insert the 0o755 default cleanly while preserving the higher bits for symlink type
+            // (on most Linux filesystems symlinks permissions are ignored, but not on macOS and possibly other systems)
+            ...(stat?.isDirectory() ? { mode: file.mode & 0o177000 | 0o755 } : undefined),
         });
     }
 
@@ -397,6 +405,7 @@ export class Zip extends Cancelable {
                     zip.addEmptyDirectory(folder.metadataPath, {
                         ...this.getYazlOptions(),
                         ...folder.options,
+                        mode: 0o755,
                     });
                 }
             }
