@@ -233,9 +233,6 @@ class EntryContext implements IEntryContext {
  * Extract the zip file.
  */
 export class Unzip extends Cancelable {
-    /**
-     *
-     */
     constructor(private options?: IExtractOptions) {
         super();
     }

@@ -27,7 +27,7 @@ type ActiveArchive = {
     zipStream?: WriteStream;
 };
 
-export interface IZipOptions {
+export interface IZipOptions extends Partial<yazl.Options> {
     /**
      * Indicates how to handle the given path when it is a symbolic link.
      *
@@ -52,9 +52,6 @@ export interface IZipOptions {
  * Compress files or folders to a zip file.
  */
 export class Zip extends Cancelable {
-    /**
-     *
-     */
     constructor(private options?: IZipOptions) {
         super();
         this.zipFiles = [];
@@ -316,6 +313,7 @@ export class Zip extends Cancelable {
                 zip.addEmptyDirectory(file.metadataPath, {
                     mtime: entry.mtime,
                     mode: entry.mode,
+                    ...this.getYazlOptions(),
                 });
             } else {
                 await this.addFileStream(zip, entry, file.metadataPath, token);
@@ -348,9 +346,9 @@ export class Zip extends Cancelable {
             // If the file attribute is known, add the entry using `addReadStream`,
             // this can reduce the number of calls to the `fs.stat` method.
             zip.addReadStream(fileStream, metadataPath, {
-                ...this.getYazlOption(),
-                mode: file.mode,
                 mtime: file.mtime,
+                mode: file.mode,
+                ...this.getYazlOptions(),
             });
         });
     }
@@ -358,9 +356,9 @@ export class Zip extends Cancelable {
     private async addSymlink(zip: yazl.ZipFile, file: exfs.FileEntry, metadataPath: string): Promise<void> {
         const linkTarget = await fs.readlink(file.path);
         zip.addBuffer(Buffer.from(linkTarget), metadataPath, {
-            ...this.getYazlOption(),
             mtime: file.mtime,
             mode: file.mode,
+            ...this.getYazlOptions(),
         });
     }
 
@@ -385,7 +383,7 @@ export class Zip extends Cancelable {
                 // If the folder is empty and the metadataPath has a value,
                 // an empty folder should be created based on the metadataPath
                 if (folder.metadataPath) {
-                    zip.addEmptyDirectory(folder.metadataPath);
+                    zip.addEmptyDirectory(folder.metadataPath, { ...this.getYazlOptions() });
                 }
             }
         }
@@ -419,18 +417,12 @@ export class Zip extends Cancelable {
     /**
      * Retrieves the yazl options based on the current settings.
      *
-     * @returns The yazl options with the specified compression level,
-     * or undefined if options or compressionLevel are not properly set.
+     * @returns The yazl options with the specified settings.
      */
-    private getYazlOption(): Partial<yazl.Options> | undefined {
+    private getYazlOptions(): Partial<yazl.Options> | undefined {
         if (!this.options) {
             return undefined;
         }
-        if (typeof this.options.compressionLevel !== "number") {
-            return undefined;
-        }
-        return {
-            compressionLevel: this.options.compressionLevel,
-        };
+        return this.options;
     }
 }
