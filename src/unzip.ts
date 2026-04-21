@@ -550,7 +550,7 @@ export class Unzip extends Cancelable {
                     await pipelinePromise;
 
                     const mtime = entry.getLastModDate();
-                    await fs.lutimes(filePath, Date.now(), mtime);
+                    await fs.lutimes(filePath, new Date(), mtime);
                 } finally {
                     disposeCancel();
                 }
