@@ -465,7 +465,15 @@ export class Unzip extends Cancelable {
             // Directory file names end with '/'.
             // Note that entries for directories themselves are optional.
             // An entry's fileName implicitly requires its parent directories to exist.
-            await exfs.ensureFolder(entryContext.getFilePath());
+            const dir = entryContext.getFilePath();
+            await exfs.ensureFolder(dir);
+
+            // Enforce rwx on folder for ourselves so we don't block ourselves from writing the files of this folder later.
+            const mode = this.modeFromEntry(entry) | 0o700;
+            const mtime = entry.getLastModDate();
+            await fs.chmod(dir, mode);
+            await fs.lutimes(dir, new Date(), mtime);
+
             this.readNextEntry(zfile, token);
         } else {
             // file entry
