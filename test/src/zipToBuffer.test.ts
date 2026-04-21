@@ -22,6 +22,7 @@ describe("zip to buffer", () => {
         await zl.extract(
             path.join(__dirname, "../zips/buffer_test/resources.zip"),
             path.join(__dirname, "../unzips/buffer_test/resources"),
+            { overwrite: true },
         );
         expect(existsSync(path.join(__dirname, "../unzips/buffer_test/resources/subfolder/test.txt"))).toBe(true);
     });
