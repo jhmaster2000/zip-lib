@@ -55,6 +55,7 @@ describe("zip", () => {
         const unzipTarget = path.join(__dirname, "../unzips/resources_advance");
         await zl.extract(target, unzipTarget, {
             overwrite: true,
+            preserveLastModifiedTimestamps: true,
         });
 
         // masking the returned mode is necessary to strip unwanted potential non-standard permission bits
@@ -80,6 +81,50 @@ describe("zip", () => {
         const statFolderFile2 = fs.statSync(path.join(unzipTarget, "new subfolder2/test.txt"));
         expect(statFolderFile2.mode & 0o777).toBe(0o700); 
         expect(statFolderFile2.mtime.getTime()).toBe(dateFolderFiles.getTime());
+
+        expect(fs.existsSync(path.join(unzipTarget, "new subfolder2/test.txt - shortcut.lnk"))).toBe(true);
+    });
+
+    it("advance zip with forced modes",  async () => {
+        const zip = new zl.Zip({ mode: 0o644 });
+
+        const fileLnk = path.join(__dirname, "../resources/src - shortcut.lnk");
+        const fileTxt = path.join(__dirname, "../resources/¹ º » ¼ ½ ¾.txt");
+        const folderNew = path.join(__dirname, "../resources/subfolder");
+        const folderWithSpace = path.join(__dirname, "../resources/name with space");
+
+        zip.addFile(fileLnk, "test2.lnk");
+        zip.addFile(fileTxt, "ddddd2.txt", { mode: 0o604 });
+        zip.addFolder(folderNew, "new subfolder2", { mode: 0o700 });
+        zip.addFolder(folderWithSpace, "name with space2", { mode: 0o750 });
+
+        const target = path.join(__dirname, "../zips/resources_advance.zip");
+        await zip.archive(target);
+        const unzipTarget = path.join(__dirname, "../unzips/resources_advance");
+        await zl.extract(target, unzipTarget, {
+            overwrite: true,
+            forceFileMode: 0o611,
+            forceDirMode: 0o605, // also testing automatic 0o700 enforcement for folders.
+        });
+
+        // masking the returned mode is necessary to strip unwanted potential non-standard permission bits
+        // (i.e. the com.apple.provenance bit on macOS)
+
+        const statLnk = fs.statSync(path.join(unzipTarget, "test2.lnk"));
+        expect(statLnk.mode & 0o777).toBe(0o611);
+        
+        const statTxt = fs.statSync(path.join(unzipTarget, "ddddd2.txt"));
+        expect(statTxt.mode & 0o777).toBe(0o611);
+
+        // Due to how ZIP files don't save dedicated entries for folders unless it's an empty folder, we cannot check
+        // "name with space2" or "new subfolder2" for their mode, because it simply doesn't exist for them in the ZIP.
+        const statFolderWithSpace = fs.statSync(path.join(unzipTarget, "name with space2/empty folder"));
+        expect(statFolderWithSpace.mode & 0o777).toBe(0o705);
+    
+        const statFolderFile1 = fs.statSync(path.join(unzipTarget, "new subfolder2/test text.txt"));
+        expect(statFolderFile1.mode & 0o777).toBe(0o611);
+        const statFolderFile2 = fs.statSync(path.join(unzipTarget, "new subfolder2/test.txt"));
+        expect(statFolderFile2.mode & 0o777).toBe(0o611); 
 
         expect(fs.existsSync(path.join(unzipTarget, "new subfolder2/test.txt - shortcut.lnk"))).toBe(true);
     });

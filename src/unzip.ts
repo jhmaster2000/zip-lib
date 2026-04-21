@@ -39,6 +39,27 @@ export interface IExtractOptions {
      */
     safeSymlinksOnly?: boolean;
     /**
+     * Controls whether the **Last Modified** timestamp of files inside the archive is preserved
+     * on the extracted files, or discarded and replaced with the extraction time (OS-defined).
+     * 
+     * The default value is `false`.
+     */
+    preserveLastModifiedTimestamps?: boolean;
+    /**
+     * Controls whether the **Mode** permission bits of files inside the archive are preserved
+     * on the extracted files, or discarded and replaced by the value provided in this option.
+     * 
+     * The default value is `undefined` (Preserve mode set in the archive).
+     */
+    forceFileMode?: number,
+    /**
+     * Controls whether the **Mode** permission bits of folders inside the archive are preserved
+     * on the extracted folders, or discarded and replaced by the value provided in this option.
+     * 
+     * The default value is `undefined` (Preserve mode set in the archive).
+     */
+    forceDirMode?: number,
+    /**
      * Called before an item is extracted.
      * @param event
      */
@@ -468,11 +489,14 @@ export class Unzip extends Cancelable {
             const dir = entryContext.getFilePath();
             await exfs.ensureFolder(dir);
 
-            // Enforce rwx on folder for ourselves so we don't block ourselves from writing the files of this folder later.
-            const mode = this.modeFromEntry(entry) | 0o700;
-            const mtime = entry.getLastModDate();
-            await fs.chmod(dir, mode);
-            await fs.lutimes(dir, new Date(), mtime);
+            const mode = this.options?.forceDirMode ?? this.modeFromEntry(entry);
+            // We enforce rwx on folders for ourselves so we can't fail to write the extracted files of this folder later.
+            await fs.chmod(dir, mode | 0o700);
+
+            if (this.options?.preserveLastModifiedTimestamps) {
+                const mtime = entry.getLastModDate();
+                await fs.lutimes(dir, new Date(), mtime);
+            }
 
             this.readNextEntry(zfile, token);
         } else {
@@ -521,9 +545,10 @@ export class Unzip extends Cancelable {
     ): Promise<void> {
         try {
             const filePath = entryContext.getFilePath();
-            const mode = this.modeFromEntry(entry);
+            const archiveMode = this.modeFromEntry(entry);
+            const mode = this.options?.forceFileMode ?? archiveMode;
             // see https://unix.stackexchange.com/questions/193465/what-file-mode-is-a-symlink
-            const isSymlink = (mode & 0o170000) === 0o120000;
+            const isSymlink = (archiveMode & 0o170000) === 0o120000;
             if (isSymlink) {
                 entryContext.symlinkFileNames.push(
                     path.resolve(path.join(entryContext.targetFolder, entryContext.decodeEntryFileName)),
@@ -557,8 +582,10 @@ export class Unzip extends Cancelable {
                 try {
                     await pipelinePromise;
 
-                    const mtime = entry.getLastModDate();
-                    await fs.lutimes(filePath, new Date(), mtime);
+                    if (this.options?.preserveLastModifiedTimestamps) {
+                        const mtime = entry.getLastModDate();
+                        await fs.lutimes(filePath, new Date(), mtime);
+                    }
                 } finally {
                     disposeCancel();
                 }
