@@ -9,11 +9,13 @@ import * as exfs from "./fs";
 interface ZipFileEntry {
     path: string;
     metadataPath: string;
+    options?: Partial<yazl.FileOptions>;
 }
 
 interface ZipFolderEntry {
     path: string;
     metadataPath?: string;
+    options?: Partial<yazl.DirectoryOptions>;
 }
 
 type ArchiveSettler = {
@@ -62,13 +64,15 @@ export class Zip extends Cancelable {
 
     private token: CancellationToken | null = null;
     private activeArchive: ActiveArchive | null = null;
+
     /**
      * Adds a file from the file system at `realPath` to the zip file as `metadataPath`.
      * @param file
      * @param metadataPath Typically, `metadataPath` would be calculated as `path.relative(root, realPath)`.
      * A valid metadataPath must not start with "/" or /[A-Za-z]:\//, and must not contain "..".
+     * @param options Options specific to this file, will take priority over any default options set in the `Zip` constructor.
      */
-    public addFile(file: string, metadataPath?: string): void {
+    public addFile(file: string, metadataPath?: string, options?: Partial<yazl.FileOptions>): void {
         let mPath = metadataPath;
         if (!mPath) {
             mPath = path.basename(file);
@@ -76,6 +80,7 @@ export class Zip extends Cancelable {
         this.zipFiles.push({
             path: file,
             metadataPath: mPath,
+            options,
         });
     }
 
@@ -84,11 +89,14 @@ export class Zip extends Cancelable {
      * @param folder
      * @param metadataPath Typically, `metadataPath` would be calculated as `path.relative(root, realPath)`.
      * A valid metadataPath must not start with "/" or /[A-Za-z]:\//, and must not contain "..".
+     * @param options Options specific to this folder, will take priority over any default options set in the `Zip` constructor.
+     * All files within the folder will inherit the same options, to set per-file options, use `addFile`.
      */
-    public addFolder(folder: string, metadataPath?: string): void {
+    public addFolder(folder: string, metadataPath?: string, options?: Partial<yazl.DirectoryOptions>): void {
         this.zipFolders.push({
             path: folder,
             metadataPath,
+            options,
         });
     }
 
@@ -291,7 +299,7 @@ export class Zip extends Cancelable {
                     const realPath = await exfs.realpath(file.path);
                     const actualStat = await fs.stat(realPath);
                     if (actualStat.isDirectory()) {
-                        await this.walkDir(zip, [{ path: realPath, metadataPath: file.metadataPath }], token);
+                        await this.walkDir(zip, [{ path: realPath, metadataPath: file.metadataPath, options: file.options }], token);
                     } else {
                         const targetEntry: exfs.FileEntry = {
                             path: realPath,
@@ -300,13 +308,13 @@ export class Zip extends Cancelable {
                             mtime: actualStat.mtime,
                             mode: actualStat.mode,
                         };
-                        await this.addFileStream(zip, targetEntry, file.metadataPath, token);
+                        await this.addFileStream(zip, targetEntry, file, token);
                     }
                 } catch (_error) {
                     // Symlink is broken, ignore it
                 }
             } else {
-                await this.addSymlink(zip, entry, file.metadataPath);
+                await this.addSymlink(zip, entry, file);
             }
         } else {
             if (entry.type === "dir") {
@@ -314,9 +322,10 @@ export class Zip extends Cancelable {
                     mtime: entry.mtime,
                     mode: entry.mode,
                     ...this.getYazlOptions(),
+                    ...file.options,
                 });
             } else {
-                await this.addFileStream(zip, entry, file.metadataPath, token);
+                await this.addFileStream(zip, entry, file, token);
             }
         }
     }
@@ -324,7 +333,7 @@ export class Zip extends Cancelable {
     private addFileStream(
         zip: yazl.ZipFile,
         file: exfs.FileEntry,
-        metadataPath: string,
+        zipEntry: ZipFileEntry,
         token: CancellationToken,
     ): Promise<void> {
         return new Promise<void>((resolve, reject) => {
@@ -345,20 +354,22 @@ export class Zip extends Cancelable {
 
             // If the file attribute is known, add the entry using `addReadStream`,
             // this can reduce the number of calls to the `fs.stat` method.
-            zip.addReadStream(fileStream, metadataPath, {
+            zip.addReadStream(fileStream, zipEntry.metadataPath, {
                 mtime: file.mtime,
                 mode: file.mode,
                 ...this.getYazlOptions(),
+                ...zipEntry.options,
             });
         });
     }
 
-    private async addSymlink(zip: yazl.ZipFile, file: exfs.FileEntry, metadataPath: string): Promise<void> {
+    private async addSymlink(zip: yazl.ZipFile, file: exfs.FileEntry, zipEntry: ZipFileEntry): Promise<void> {
         const linkTarget = await fs.readlink(file.path);
-        zip.addBuffer(Buffer.from(linkTarget), metadataPath, {
+        zip.addBuffer(Buffer.from(linkTarget), zipEntry.metadataPath, {
             mtime: file.mtime,
             mode: file.mode,
             ...this.getYazlOptions(),
+            ...zipEntry.options,
         });
     }
 
@@ -377,13 +388,16 @@ export class Zip extends Cancelable {
                     const metadataPath = folder.metadataPath
                         ? path.join(folder.metadataPath, relativePath)
                         : relativePath;
-                    await this.addEntry(zip, entry, { path: entry.path, metadataPath }, token);
+                    await this.addEntry(zip, entry, { path: entry.path, metadataPath, options: folder.options }, token);
                 }
             } else {
                 // If the folder is empty and the metadataPath has a value,
                 // an empty folder should be created based on the metadataPath
                 if (folder.metadataPath) {
-                    zip.addEmptyDirectory(folder.metadataPath, { ...this.getYazlOptions() });
+                    zip.addEmptyDirectory(folder.metadataPath, {
+                        ...this.getYazlOptions(),
+                        ...folder.options,
+                    });
                 }
             }
         }
