@@ -30,7 +30,7 @@ describe("zip", () => {
         const dateFolderFiles = new Date("2024-12-31T12:34:56.000Z");
         const dateDefault = new Date("2000-01-01T23:59:59.000Z");
 
-        const zip = new zl.Zip({ mode: 0o600, mtime: dateDefault });
+        const zip = new zl.Zip({ mode: 0o600, mtime: dateDefault, compressionLevel: 6 });
 
         const fileLnk = path.join(__dirname, "../resources/src - shortcut.lnk");
         const fileTxt = path.join(__dirname, "../resources/¹ º » ¼ ½ ¾.txt");
