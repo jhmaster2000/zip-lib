@@ -323,7 +323,7 @@ export class Zip extends Cancelable {
             if (entry.type === "dir") {
                 zip.addEmptyDirectory(file.metadataPath, {
                     mtime: entry.mtime,
-                    ...this.getYazlOptions(),
+                    ...this.getYazlOptions(YazlOptionType.Dir),
                     ...file.options,
                     mode: 0o755,
                 });
@@ -360,7 +360,7 @@ export class Zip extends Cancelable {
             zip.addReadStream(fileStream, zipEntry.metadataPath, {
                 mtime: file.mtime,
                 mode: file.mode,
-                ...this.getYazlOptions(),
+                ...this.getYazlOptions(YazlOptionType.File),
                 ...zipEntry.options,
             });
         });
@@ -372,7 +372,7 @@ export class Zip extends Cancelable {
         zip.addBuffer(Buffer.from(linkTarget), zipEntry.metadataPath, {
             mtime: file.mtime,
             mode: file.mode,
-            ...this.getYazlOptions(),
+            ...this.getYazlOptions(YazlOptionType.File),
             ...zipEntry.options,
             // mode is a 16-bit field, so 0o177777 is the full mask
             // clear the lower 3 fields to insert the 0o755 default cleanly while preserving the higher bits for symlink type
@@ -403,7 +403,7 @@ export class Zip extends Cancelable {
                 // an empty folder should be created based on the metadataPath
                 if (folder.metadataPath) {
                     zip.addEmptyDirectory(folder.metadataPath, {
-                        ...this.getYazlOptions(),
+                        ...this.getYazlOptions(YazlOptionType.Dir),
                         ...folder.options,
                         mode: 0o755,
                     });
@@ -442,10 +442,27 @@ export class Zip extends Cancelable {
      *
      * @returns The yazl options with the specified settings.
      */
-    private getYazlOptions(): Partial<yazl.Options> | undefined {
+    private getYazlOptions(type: YazlOptionType.File): Partial<yazl.FileOptions> | undefined;
+    private getYazlOptions(type: YazlOptionType.Dir): Partial<yazl.DirectoryOptions> | undefined;
+    private getYazlOptions(type: YazlOptionType): Partial<yazl.Options> | undefined {
         if (!this.options) {
             return undefined;
         }
-        return this.options;
+        if (type === YazlOptionType.File) {
+            return this.options;
+        }
+        const dirOptions: Partial<yazl.DirectoryOptions> = {};
+        const optionsDirView: Partial<yazl.DirectoryOptions> = this.options;
+
+        if (optionsDirView.forceDosTimestamp) dirOptions.forceDosTimestamp = optionsDirView.forceDosTimestamp;
+        if (optionsDirView.mode) dirOptions.mode = optionsDirView.mode;
+        if (optionsDirView.mtime) dirOptions.mtime = optionsDirView.mtime;
+
+        return dirOptions;
     }
+}
+
+const enum YazlOptionType {
+    File,
+    Dir,
 }
