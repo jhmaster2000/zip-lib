@@ -462,7 +462,7 @@ export class Zip extends Cancelable {
     }
 }
 
-const enum YazlOptionType {
+enum YazlOptionType {
     File,
     Dir,
 }
